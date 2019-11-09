@@ -5,8 +5,8 @@ import numpy as np
 input_path = './input_lightfield_grid/'
 
 image_name = 'shot'
-image_width = 120
-image_height = 100
+image_width = 512
+image_height = 384
 
 file_ending = '.png'
 grid_w = 7
