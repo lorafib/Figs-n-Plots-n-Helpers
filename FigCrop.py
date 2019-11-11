@@ -15,7 +15,7 @@ light_blue = (242, 135, 63, 255)
 line_color = light_blue
 default_roi_scale = 3.0
 default_image_scale = 1.0
-default_line_thickness = 3 # in px
+default_line_thickness = 5 # in px
 default_offset = 0 # in px towards the orig image
 
 def getColor(index):
@@ -81,7 +81,7 @@ def rescale_images(image, roi, bbox, roi_scale=None, roi_width=None, image_scale
 def layout_right(scaled_image, scaled_roi, scaled_bbox, line_thickness=default_line_thickness, offset=default_offset):
     # init fig canvas
     fig_height = max(scaled_image.shape[0], scaled_roi.shape[0])
-    fig_width = scaled_image.shape[1]+scaled_roi.shape[1]-offset
+    fig_width = max(scaled_image.shape[1], scaled_image.shape[1]+scaled_roi.shape[1]-offset)
     if scaled_image.shape[2] == 4: # #RGBA, BGRA whatever
         # init transparent
         fig = np.full((fig_height, fig_width, scaled_image.shape[2]), fill_value=0, dtype=np.uint8)
@@ -190,6 +190,17 @@ if __name__ == "__main__":
         ap.add_argument("-off", "--offset", required=False, help="offset of pasted, zoomed roi towards the image center")
 
         args = vars(ap.parse_args())
+
+        # check if input is dir, 
+        # if so replace args[input] by a list
+        # containing all the images in the dir
+        
+        if len(args["input"]) == 1:
+            dir = Path(args["input"][0])
+            image_list = [str(path) for path in dir.glob("*.png")]
+            image_list.extend([str(path) for path in dir.glob("*.jpg")])
+            args["input"] = image_list
+
         
         # load the image, clone it, and setup the mouse callback function
         image = cv2.imread(args["input"][0])
@@ -211,6 +222,14 @@ if __name__ == "__main__":
             # if the 'd' key is pressed, break from the loop
             elif key == ord("d"):
                 break
+
+        # set image scale
+        image_scale = default_image_scale
+        if args["image_scale"] is not None:
+            image_scale = float(args["image_scale"])
+
+        #save image size of first one
+        img_dims = image.shape
         
          # choose layout
         if args["layout"] == None or args["layout"] == "right":
@@ -220,9 +239,6 @@ if __name__ == "__main__":
                 exit()
 
             # set scale params and offset
-            image_scale = default_image_scale
-            if args["image_scale"] is not None:
-                image_scale = float(args["image_scale"])
             roi_scale = default_roi_scale
             roi_width = None
             if args["roi_scale"] is not None and args["roi_width"] is not None:
@@ -240,6 +256,11 @@ if __name__ == "__main__":
             for image_name in args["input"]: 
                 # load the image, clone it, and setup the mouse callback function
                 clone = cv2.imread(image_name, cv2.IMREAD_UNCHANGED)
+                if clone.shape[0] != img_dims[0] or clone.shape[1] != img_dims[1]:
+                    img_dims
+                    print("mismatching resolution, skip "+image_name)
+                    print(str(clone.shape) +"!="+str(img_dims))
+                    continue
                 roi = clone[refPt[0][1]:refPt[1][1], refPt[0][0]:refPt[1][0]]
                 # cv2.imshow("ROI", roi)
 
@@ -260,14 +281,15 @@ if __name__ == "__main__":
             if len(refPt) != 2:
                 print("no roi or too many selected")
                 exit()
-             # set scale params and offset
-            image_scale = default_image_scale
-            if args["image_scale"] is not None:
-                image_scale = float(args["image_scale"])
-                
+               
             for image_name in args["input"]: 
                 # load the image, clone it, and setup the mouse callback function
                 clone = cv2.imread(image_name, cv2.IMREAD_UNCHANGED)
+                # skip images with mismathin resolution
+                if clone.shape[0] != img_dims[0] or clone.shape[1] != img_dims[1]:
+                    img_dims
+                    print("mismatching resolution, skip "+image_name)
+                    continue
                 for ri in range(0,len(refPt), 2):
                     roi_in_w = refPt[1][0]- refPt[0][0]
                     roi_in_h = refPt[1][1]- refPt[0][1]
@@ -298,14 +320,14 @@ if __name__ == "__main__":
             if num_rois < 1:
                 print("no enugh roi selected")
                 exit()
-             # set scale params and offset
-            image_scale = default_image_scale
-            if args["image_scale"] is not None:
-                image_scale = float(args["image_scale"])
                 
             for image_name in args["input"]: 
                 # load the image, clone it, and setup the mouse callback function
                 clone = cv2.imread(image_name, cv2.IMREAD_UNCHANGED)
+                if clone.shape[0] != img_dims[0] or clone.shape[1] != img_dims[1]:
+                    img_dims
+                    print("mismatching resolution, skip "+image_name)
+                    continue
                 fig = None
                 for ri in range(0,len(refPt), 2):
                     # make roi squared with max dim
