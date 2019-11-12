@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import numpy as np
 import cv2
+import sys
  
 # initialize the list of reference points and boolean indicating
 # whether cropping is being performed or not
@@ -27,7 +28,7 @@ def getColor(index):
     return (int(next_rgb[0][0][0]),int(next_rgb[0][0][1]),int(next_rgb[0][0][2]),255)
 
 
-def write_image(image_name, args):
+def write_image(fig, image_name, args):
         # get putput path
     img_path = Path(image_name)
     img_dir = img_path.parent
@@ -147,11 +148,42 @@ def layout_sqr_bottom(tile, scaled_image, scaled_roi, scaled_bbox, line_thicknes
     cv2.rectangle(fig, (roi_paste_start[1]+line_thickness, roi_paste_start[0]+line_thickness), 
                         (roi_paste_end[1]-line_thickness, roi_paste_end[0]-line_thickness), 
                         color, line_thickness) 
-
-
     return fig
 
-def click_and_crop(event, x, y, flags, param):
+def layout_sqr_right(tile, scaled_image, scaled_roi, scaled_bbox, line_thickness=default_line_thickness):
+    if( tile == 0):
+        # init fig canvas
+        img_width = scaled_image.shape[1]
+        fig_width = img_width+ scaled_roi.shape[1]+line_thickness
+        fig_height = scaled_image.shape[0]
+        if scaled_image.shape[2] == 4: # #RGBA, BGRA whatever
+            # init transparent
+            fig = np.full((fig_height, fig_width, scaled_image.shape[2]), fill_value=0, dtype=np.uint8)
+        else: #RGB, BGR, grayscale whatever 
+            # init white
+            fig = np.full((fig_height, fig_width, scaled_image.shape[2]), fill_value=255, dtype=np.uint8)
+
+        #paste image
+        fig[0:scaled_image.shape[0],0:img_width,:] = scaled_image
+    else:
+        fig = scaled_image
+        img_width = fig.shape[1]- scaled_roi.shape[1]-line_thickness
+    # draw a rectangle around the roi
+    color = getColor(tile)
+    cv2.rectangle(fig, scaled_bbox[0], scaled_bbox[1], color, line_thickness)
+
+
+    #paste roi
+    roi_paste_start = [(tile*scaled_roi.shape[0]), img_width]
+    roi_paste_end = [roi_paste_start[0]+scaled_roi.shape[0], roi_paste_start[1]+scaled_roi.shape[1]]
+    fig[roi_paste_start[0]:roi_paste_end[0], roi_paste_start[1]:roi_paste_end[1],:] = scaled_roi
+    # draw a rectangle around the the scaled, pasted region of interest
+    cv2.rectangle(fig, (roi_paste_start[1]+line_thickness, roi_paste_start[0]+line_thickness), 
+                        (roi_paste_end[1]-line_thickness, roi_paste_end[0]-line_thickness), 
+                        color, line_thickness) 
+    return fig
+
+def click_and_crop(event, x, y, flags, image):
 	# grab references to the global variables
 	global refPt, cropping, line_color
  
@@ -172,10 +204,11 @@ def click_and_crop(event, x, y, flags, param):
 		# draw a rectangle around the region of interest
 		cv2.rectangle(image, refPt[-2], refPt[-1], line_color, 2)
 		cv2.imshow("image", image)
-
-if __name__ == "__main__":
+def FigCrop(rawArgs = None):
+    global refPt
     try:
-
+        print('hi')
+        args = []
         # construct the argument parser and parse the arguments
         ap = argparse.ArgumentParser()
         # "Example call: python .\FigCrop.py -i .\FigCropInput\test_input.png .\FigCropInput\test_input2.png -o .\FigCropOutput.png -l sqr_bottom"
@@ -189,7 +222,12 @@ if __name__ == "__main__":
         ap.add_argument("-rw", "--roi_width", required=False, help="pasted roi width, will be ignored if scale is set too")
         ap.add_argument("-off", "--offset", required=False, help="offset of pasted, zoomed roi towards the image center")
 
-        args = vars(ap.parse_args())
+        if rawArgs is None:
+            # when called from command line
+            args = vars(ap.parse_args(rawArgs))
+        else:
+            args = vars(ap.parse_args())
+        
 
         # check if input is dir, 
         # if so replace args[input] by a list
@@ -197,16 +235,17 @@ if __name__ == "__main__":
         
         if len(args["input"]) == 1:
             dir = Path(args["input"][0])
-            image_list = [str(path) for path in dir.glob("*.png")]
-            image_list.extend([str(path) for path in dir.glob("*.jpg")])
-            args["input"] = image_list
+            if dir.is_dir():
+                image_list = [str(path) for path in dir.glob("*.png")]
+                image_list.extend([str(path) for path in dir.glob("*.jpg")])
+                args["input"] = image_list
 
         
         # load the image, clone it, and setup the mouse callback function
         image = cv2.imread(args["input"][0])
         clone = image.copy()
         cv2.namedWindow("image")
-        cv2.setMouseCallback("image", click_and_crop)
+        cv2.setMouseCallback("image", click_and_crop, image)
         
         # keep looping until the 'q' key is pressed
         while True:
@@ -273,11 +312,11 @@ if __name__ == "__main__":
                 
                 # show and write
                 cv2.imshow("Figure", fig)
-                write_image(image_name, args)
+                write_image(fig, image_name, args)
 
                 cv2.waitKey(30)
 
-        elif args["layout"] == "sqr_right":
+        elif args["layout"] == "sqr_one_right":
             if len(refPt) != 2:
                 print("no roi or too many selected")
                 exit()
@@ -312,7 +351,7 @@ if __name__ == "__main__":
                 
                 # show and write
                 cv2.imshow("Figure", fig)
-                write_image(image_name, args)
+                write_image(fig, image_name, args)
 
                 cv2.waitKey(30)
         elif args["layout"] == "sqr_bottom":
@@ -345,13 +384,52 @@ if __name__ == "__main__":
                     scaled_image, scaled_roi, scaled_bbox = scaled_thingies
                     # first call inits canvas n stuff, after wards only new boxes are added
                     if fig is None:
-                        fig = layout_sqr_bottom(ri//2, scaled_image, scaled_roi,scaled_bbox)
+                        fig = layout_sqr_right(ri//2, scaled_image, scaled_roi,scaled_bbox)
                     else:
-                        fig = layout_sqr_bottom(ri//2, fig, scaled_roi,scaled_bbox)
+                        fig = layout_sqr_right(ri//2, fig, scaled_roi,scaled_bbox)
                 
                 # show and write
                 cv2.imshow("Figure", fig)
-                write_image(image_name, args)
+                write_image(fig, image_name, args)
+
+                cv2.waitKey(3000)
+        elif args["layout"] == "sqr_right":
+            num_rois = len(refPt)//2
+            if num_rois < 1:
+                print("no enugh roi selected")
+                exit()
+                
+            for image_name in args["input"]: 
+                # load the image, clone it, and setup the mouse callback function
+                clone = cv2.imread(image_name, cv2.IMREAD_UNCHANGED)
+                if clone.shape[0] != img_dims[0] or clone.shape[1] != img_dims[1]:
+                    img_dims
+                    print("mismatching resolution, skip "+image_name)
+                    continue
+                fig = None
+                for ri in range(0,len(refPt), 2):
+                    # make roi squared with max dim
+                    roi_in_w = refPt[ri+1][0]- refPt[ri+0][0]
+                    roi_in_h = refPt[ri+1][1]- refPt[ri+0][1]
+                    in_dim = max(roi_in_w, roi_in_h)
+                    refPt[ri+1] = (refPt[ri+0][0]+in_dim, refPt[ri+0][1]+in_dim)
+                    
+                    roi = clone[refPt[ri+0][1]:refPt[ri+1][1], refPt[ri+0][0]:refPt[ri+1][0]]
+                    roi_width = int((clone.shape[0]*image_scale)//num_rois)
+                    
+                    # scale image accordingly
+                    scaled_thingies = rescale_images(clone, roi, [refPt[ri+0],refPt[ri+1]], 
+                                        image_scale=image_scale, roi_width=roi_width)
+                    scaled_image, scaled_roi, scaled_bbox = scaled_thingies
+                    # first call inits canvas n stuff, after wards only new boxes are added
+                    if fig is None:
+                        fig = layout_sqr_right(ri//2, scaled_image, scaled_roi,scaled_bbox)
+                    else:
+                        fig = layout_sqr_right(ri//2, fig, scaled_roi,scaled_bbox)
+                
+                # show and write
+                cv2.imshow("Figure", fig)
+                write_image(fig, image_name, args)
 
                 cv2.waitKey(3000)
         else:
@@ -367,3 +445,7 @@ if __name__ == "__main__":
 # TODO:
 # match pasted roi height with fig height?
 # use all args
+
+if __name__ == '__main__':
+    print('hi')
+    FigCrop()
