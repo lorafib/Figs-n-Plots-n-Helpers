@@ -13,7 +13,7 @@ cropping = False
 orange = (20, 150, 240,255)
 light_blue = (242, 135, 63, 255)
 
-line_color = light_blue
+line_color = orange #light_blue
 default_roi_scale = 3.0
 default_image_scale = 1.0
 default_line_thickness = 5 # in px
@@ -90,8 +90,12 @@ def layout_right(scaled_image, scaled_roi, scaled_bbox, line_thickness=default_l
         # init white
         fig = np.full((fig_height, fig_width, scaled_image.shape[2]), fill_value=255, dtype=np.uint8)
 
-    #paste image
-    fig[0:scaled_image.shape[0],0:scaled_image.shape[1],:] = scaled_image
+    #paste image, image is centered in y dir
+    img_paste_start = max(0,int(fig_height/2 - scaled_image.shape[0]/2))
+    fig[img_paste_start:img_paste_start+scaled_image.shape[0],0:scaled_image.shape[1],:] = scaled_image
+    #move bbox accoridngly
+    scaled_bbox[0] = (scaled_bbox[0][0], scaled_bbox[0][1]+img_paste_start)
+    scaled_bbox[1]= (scaled_bbox[1][0], scaled_bbox[1][1]+img_paste_start)
     # draw a rectangle around the roi
     cv2.rectangle(fig, scaled_bbox[0], scaled_bbox[1], line_color, line_thickness)
 
@@ -222,11 +226,11 @@ def FigCrop(rawArgs = None):
         ap.add_argument("-rw", "--roi_width", required=False, help="pasted roi width, will be ignored if scale is set too")
         ap.add_argument("-off", "--offset", required=False, help="offset of pasted, zoomed roi towards the image center")
 
-        if rawArgs is None:
+        # if rawArgs is None:
             # when called from command line
-            args = vars(ap.parse_args(rawArgs))
-        else:
-            args = vars(ap.parse_args())
+        args = vars(ap.parse_args(rawArgs))
+        # else:
+        #     args = vars(ap.parse_args())
         
 
         # check if input is dir, 
@@ -242,6 +246,10 @@ def FigCrop(rawArgs = None):
 
         
         # load the image, clone it, and setup the mouse callback function
+        if(not Path(args["input"][0]).is_file()):
+            print(args["input"][0], 'is not a file!!')
+            exit()
+
         image = cv2.imread(args["input"][0])
         clone = image.copy()
         cv2.namedWindow("image")
@@ -257,6 +265,7 @@ def FigCrop(rawArgs = None):
             if key == ord("r"):
                 image = clone.copy()
                 refPt = []
+                key = None
         
             # if the 'd' key is pressed, break from the loop
             elif key == ord("d"):
